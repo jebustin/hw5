@@ -7,24 +7,168 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+liqSales <- readr::read_csv("2019_Iowa_Liquor_Sales.csv")
+if (!require("dplyr")) {
+  install.packages("dplyr")
+}
+if (!require("ggplot2")) {
+  install.packages("ggplot2")
+}
+if (!require(tidyverse)) {
+  install.packages(tidyverse)
+}
+if (!require(lubridate)) {
+  install.packages(lubridate)
+}
+library(tidyverse)
+library(lubridate)
+library("ggplot2")
+library("dplyr")
 ```
 
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
+### 1.
+Verifying correct dl and import:
+```{r}
+head(liqSales)
 ```
 
-## Including Plots
-
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
+### 2.
+a.
+Using substr() to extract lat and long and converting to numeric:
+```{r}
+liqSales <- liqSales %>% 
+    mutate(Latitude = substr(liqSales$'Store Location', 8, 17) %>%
+           as.numeric(),
+           Longitude = substr(liqSales$'Store Location', 19, 27) %>% 
+           as.numeric())
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+At this point I did notice that printing the lat and long columns makes it appear as though they were rounded.  Upon further research I found that this was a printing issue and not an issue with the actual data.  You can adjust the number of digits printed so that it doesn't round by passing digit = as a paramenter in the method used to print.
+
+b.
+I changed the date column into a dater.  I also changed some of the categorical variables to factors.  I decided against changed the vendor number to numeric as this is more of an ID so it qualitative not quantitative.  I also found some spelling errors in the Category Names so I merged those.
+
+```{r}
+liqSales$'Store Name' <- as.factor(liqSales$'Store Name')
+liqSales$Address <- as.factor(liqSales$Address)
+liqSales$'Vendor Number' <- as.factor('Vendor Number')
+liqSales$'Vendor Name' <- as.factor(liqSales$'Vendor Name')
+liqSales <- liqSales %>%
+  mutate(Date= as.Date(Date, format = "%m/%d/%Y"))
+
+liqSales$'Category Name' = ifelse(liqSales$'Category Name' %in% c('Imported Vodkas','Imported Vodka'), 'Imported Vodkas', liqSales$'Category Name')
+
+liqSales$'Category Name' = ifelse(liqSales$'Category Name' %in% c('Temporary & Specialty Packages','Temporary &  Specialty Packages'), 'Temporary & Specialty Packages', liqSales$'Category Name')
+
+liqSales$'Category Name' = ifelse(liqSales$'Category Name' %in% c('Imported Distilled Spirits Specialty','Imported Distilled Spirit Specialty'), 'Imported Distilled Spirits Specialty', liqSales$'Category Name')
+
+liqSales$'Category Name' = ifelse(liqSales$'Category Name' %in% c('Imported Cordials & Liqueurs','Imported Cordials & Liqueur'), 'Imported Cordials & Liqueurs', liqSales$'Category Name')
+
+liqSales$'Category Name' = ifelse(liqSales$'Category Name' %in% c('Cocktails / RTD','Cocktails /RTD'), 'Cocktails / RTD', liqSales$'Category Name')
+
+liqSales$'Category Name' = ifelse(liqSales$'Category Name' %in% c('American Vodkas','American Vodka'), 'American Vodkas', liqSales$'Category Name')
+
+liqSales$'Category Name' = ifelse(liqSales$'Category Name' %in% c('American Distilled Spirits Specialty','American Distilled Spirit Specialty'), 'American Distilled Spirits Specialty', liqSales$'Category Name')
+
+liqSales$'Category Name' <- as.factor(liqSales$'Category Name')
+
+str(liqSales)
+```
+
+c.
+I used the date methods to extract day, month, and year.
+
+```{r}
+liqSales <- liqSales %>% 
+    mutate(Month = month(Date),
+           Day = day(Date),
+           Year = year(Date))
+```
+
+### 3.
+a.
+```{r}
+liqSales %>%
+  ggplot(aes(x = Longitude, y = Latitude)) +
+  geom_point() +
+  ggtitle("Liquor Retailor Locations in Ames, Iowa")
+```
+
+The above warning about the noninclusion of rows is ok because these rows are multiple sales for the same stores.
+
+b.
+```{r}
+liqSales %>%
+  group_by('Category Name') %>%
+  ggplot(aes(x = liqSales$'Category Name', y = 'Volume Sold
+             (Liters)')) +
+  geom_bar(stat="identity") +
+  coord_flip() +
+  ggtitle("Volume of Liquor Sold by Type") +
+  xlab("Type of Liquor") +
+  ylab("Volume (Liters)")
+```
+
+### 4.
+```{r}
+liqSales %>%
+  filter(Year == 2019) %>%
+  group_by(Date) %>%
+  summarize(Count = n(), Volume = sum(`Volume Sold (Liters)`), Cost =
+            sum(`Sale (Dollars)`))
+```
+
+### 5.
+```{r}
+liqSales %>%
+  filter(Year == 2019) %>%
+  group_by(Date) %>%
+  summarize(Count = n(), Volume = sum(`Volume Sold (Liters)`), Cost =
+            sum(`Sale (Dollars)`)) %>%
+  mutate(Month = month(Date), Day = day(Date)) %>%
+  ggplot(aes(x = Day, y = Volume)) +
+  geom_point() +
+  geom_smooth(method = 'loess', n = 30, se = FALSE, color = "red") +
+  facet_wrap(~Month) +
+  ggtitle("Daily Liquor Volume Sold Over Months in 2019")
+```
+
+There are a lot of very predictable trends that appear when we look at the total volumn of alcohol sold in 2019 by day.  First of all, there is a weekly cycle.  Since this dataset is looking at wholesales and not the purchases of consumers this makes sense.  While consumers also cycle weekly by drinking more on the weekends, retailers have order schedules that amplify this cycle. Stores will place liquor orders on preset days of the week and Iowa Bev then makes deliveries in batches.  Some weeks this happens mostly on one day but sometimes it takes 2 days and you see 2 days in a row with a high volumn of liquor sold.  I have extensive (10+ years) personal experience installing point of sale and inventory systems for both on premise and off alcohol sales and my personal knowledge maps to what we see in this graph.  Also, the highest days of the year are right before New Years Eve as those placing orders are given larger budgets in preparation for the holiday as well as at the end of July as Ames gets ready for a huge influx of students.   
+
+### 6.
+ISU had home football games in 2019 on 8/31, 9/14, 9/21, 10/5, 10/26, 11/16, and 11/23.  The following graph has home games shown with a red and gold vertical line.  Prior to each game there is a spike in sales.  These spikes follow the weekly cyclical nature discussed in the previous problem.  There are 3 time periods on this graph where the spike in sales prior to a game took place over 2 days.  This happens right before the Iowa game and right before the last 2 home games.  For analysis, it is important to think about the totals for these 2 days.  Prior to the Iowa game over 18,000 liters of alcohol were ordered!  That is over 1/2 a liter for every ISU student!
+
+```{r}
+liqSales %>%
+  group_by(Date) %>%
+  filter(Date >= as.Date("2019-08-25") && Date <=
+           as.Date("2019-11-28")) %>%
+  summarize(Count = n(), Volume = sum(`Volume Sold (Liters)`), Cost =
+            sum(`Sale (Dollars)`)) %>%
+  ggplot(aes(x = Date, y = Volume)) +
+  geom_line() +
+  scale_x_date() +
+  geom_vline(xintercept = as.Date("2019-08-31"), color = "yellow") +
+  geom_vline(xintercept = as.Date("2019-09-14"), color = "yellow") +
+  geom_vline(xintercept = as.Date("2019-09-21"), color = "yellow") +
+  geom_vline(xintercept = as.Date("2019-10-05"), color = "yellow") +
+  geom_vline(xintercept = as.Date("2019-10-26"), color = "yellow") +
+  geom_vline(xintercept = as.Date("2019-11-16"), color = "yellow") +
+  geom_vline(xintercept = as.Date("2019-11-23"), color = "yellow") +
+  geom_vline(xintercept = as.Date("2019-08-31"), linetype="dashed", 
+             color = "red") +
+  geom_vline(xintercept = as.Date("2019-09-14"), linetype="dashed", 
+             color = "red") +
+  geom_vline(xintercept = as.Date("2019-09-21"), linetype="dashed", 
+             color = "red") +
+  geom_vline(xintercept = as.Date("2019-10-05"), linetype="dashed", 
+             color = "red") +
+  geom_vline(xintercept = as.Date("2019-10-26"), linetype="dashed", 
+             color = "red") +
+  geom_vline(xintercept = as.Date("2019-11-16"), linetype="dashed", 
+             color = "red") +
+  geom_vline(xintercept = as.Date("2019-11-23"), linetype="dashed", 
+             color = "red") +
+  ggtitle("Ames Daily Alcohol Sales: 2019 ISU Football Season") +
+  ylab("Volumn (Liters)")
+```
